@@ -1,6 +1,9 @@
 # Created by https://www.toptal.com/developers/gitignore/api/c,clion,windows,linux
 # Edit at https://www.toptal.com/developers/gitignore?templates=c,clion,windows,linux
 
+### Main executable ###
+main
+
 ### C ###
 # Prerequisites
 *.d
