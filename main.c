@@ -16,98 +16,119 @@ void error_handle(const char* error_message) {
 }
 
 // meant for executing non-standard commands
-int nonstandard_command_execute(char* command, char* sep) {
-    for (int i = 0; i < path_count; i++) {
+int nonstandard_command_execute(char** command_list, int command_list_count) {
 
-        char file_path[1024];
-        strcpy(file_path, path[i]);
-        strcat(file_path, "/");
-        strcat(file_path, sep);
+    int pid_array_count = 0;
+    pid_t pid_array[command_list_count];
 
-        int result = access(file_path, X_OK);
-        if (result != 0) {
+    for (int j = 0; j < command_list_count; j++) {
+        char* command = command_list[j];
+        char* sep = strsep(&command, " ");
+
+        if (strcmp(sep, "exit") == 0 || strcmp(sep, "cd") == 0 || strcmp(sep, "path") == 0) {
             continue;
         }
 
-        int arguments_count = 0;
-        int arguments_max_count = 1;
-        char** arguments = malloc(arguments_max_count * sizeof(char*));
-        if (arguments == NULL) {
-            error_handle("Error while allocating memory");
-        }
-        char* arg;
-        while ((arg = strsep(&command, " ")) != NULL) {
+        for (int i = 0; i < path_count; i++) {
 
-            if (arguments_count >= arguments_max_count) {
-                arguments_max_count += 5;
-                arguments = realloc(arguments, arguments_max_count * sizeof(char*));
-                if (arguments == NULL) {
-                    error_handle("Error while allocating memory");
+            char file_path[1024];
+            strcpy(file_path, path[i]);
+            strcat(file_path, "/");
+            strcat(file_path, sep);
+
+            int result = access(file_path, X_OK);
+            if (result != 0) {
+                continue;
+            }
+
+            int arguments_count = 0;
+            int arguments_max_count = 1;
+            char** arguments = malloc(arguments_max_count * sizeof(char*));
+            if (arguments == NULL) {
+                error_handle("Error while allocating memory");
+            }
+            char* arg;
+            while ((arg = strsep(&command, " ")) != NULL) {
+
+                if (arguments_count >= arguments_max_count) {
+                    arguments_max_count += 5;
+                    arguments = realloc(arguments, arguments_max_count * sizeof(char*));
+                    if (arguments == NULL) {
+                        error_handle("Error while allocating memory");
+                    }
                 }
+
+                arguments[arguments_count] = arg;
+                arguments_count++;
             }
 
-            arguments[arguments_count] = arg;
-            arguments_count++;
-        }
-
-        const pid_t pid = fork();
-        if (pid < 0) {
-            error_handle("Error while forking!\n");
-        }
-        else if (pid == 0) {
-            char *myargs[2 + arguments_count];
-            myargs[0] = strdup(file_path);
-
-            for (int j = 0; j < arguments_count; j++) {
-                myargs[1+j] = arguments[j];
+            const pid_t pid = fork();
+            pid_array[pid_array_count++] = pid;
+            if (pid < 0) {
+                error_handle("Error while forking!\n");
             }
-            myargs[1+arguments_count] = NULL;
-            execv(myargs[0], myargs);
+            else if (pid == 0) {
+                char *myargs[2 + arguments_count];
+                myargs[0] = strdup(file_path);
 
-            error_handle("Error while executing the specified command!\n");
-        }
-        else {
-            wait(NULL);
-            printf("\n");
-            return 0;
+                for (int j = 0; j < arguments_count; j++) {
+                    myargs[1+j] = arguments[j];
+                }
+                myargs[1+arguments_count] = NULL;
+                execv(myargs[0], myargs);
+
+                error_handle("Error while executing the specified command!\n");
+            }
         }
     }
-    return 1;
+
+    for (int k = 0; k < pid_array_count; k++) {
+        waitpid(pid_array[k], NULL, 0);
+    }
+    return 0;
 }
 
 // meant for executing built in commands
-int standard_command_execute(char* command, char* sep) {
+int standard_command_execute(char** command_list, int command_list_count) {
 
-    if (strcmp(sep, "exit") == 0) {
-        exit(0);
-    }
-    else if (strcmp(sep, "cd") == 0) {
-        char* arg = strsep(&command, " ");
-        if (arg == NULL) {
-            error_handle("Command cd is missing an argument\n");
+    for (int i = 0; i < command_list_count; i++) {
+
+        char* command = command_list[i];
+        char* sep = strsep(&command, " ");
+
+        if (strcmp(sep, "exit") == 0) {
+            exit(0);
         }
-        chdir(arg);
-        return 0;
-    }
-    else if (strcmp(sep, "path") == 0) {
-        char* arg;
-        while ((arg = strsep(&command, " ")) != NULL) {
-            if (path_count >= path_max_size) {
-                path_max_size += 5;
-                path = realloc(path, path_max_size * sizeof(char*));
-                if (path == NULL) {
-                    error_handle("Error while reallocating path variable\n");
-                }
+        else if (strcmp(sep, "cd") == 0) {
+            char* arg = strsep(&command, " ");
+            if (arg == NULL) {
+                error_handle("Command cd is missing an argument\n");
             }
-
-            path[path_count] = arg;
-            path_count++;
+            chdir(arg);
+            return 0;
         }
-        return 0;
-    }
+        else if (strcmp(sep, "path") == 0) {
+            char* arg;
+            while ((arg = strsep(&command, " ")) != NULL) {
+                if (path_count >= path_max_size) {
+                    path_max_size += 5;
+                    path = realloc(path, path_max_size * sizeof(char*));
+                    if (path == NULL) {
+                        error_handle("Error while reallocating path variable\n");
+                    }
+                }
 
-    return 1;
+                path[path_count] = arg;
+                path_count++;
+            }
+            return 0;
+        }
+
+        return 1;
+    }
 }
+
+
 
 // meant for parsing text
 void execute_command(char* command) {
@@ -133,81 +154,97 @@ void execute_command(char* command) {
         err_redirect_sep += 4;
         err_redirect_sep = strsep(&err_redirect_sep, " ");
     }
-    printf("%s", err_redirect_sep);
 
-    char* sep;
-    while ((sep = strsep(&command, " ")) != NULL) {
 
-        // delete redirects from OG command
-        if (command != NULL) {
-            char modified_command[1024];
-            strcpy(modified_command, command);
-            for (int i = 0; i < strlen(modified_command); i++) {
-                if (i >= 2 && modified_command[i] == '>' && modified_command[i-1] == '2') {
-                    modified_command[i-2] = '\0';
-                    break;
-                }
-                else if (i >= 1 && modified_command[i] == '>' && modified_command[i-1] == ' ') {
-                    modified_command[i-1] = '\0';
-                    break;
-                }
+    // delete redirects from OG command
+    if (command != NULL) {
+        char modified_command[1024];
+        strcpy(modified_command, command);
+        for (int i = 0; i < strlen(modified_command); i++) {
+            if (i >= 2 && modified_command[i] == '>' && modified_command[i-1] == '2') {
+                modified_command[i-2] = '\0';
+                break;
             }
-            strcpy(command, modified_command);
-        }
-
-
-        // change output if necessary
-        int std_file = -1;
-        int saved_std = dup(STDOUT_FILENO);
-
-        int err_file = -1;
-        int saved_err = dup(STDERR_FILENO);
-
-        if (std_redirect_sep != NULL) {
-            std_file = open(std_redirect_sep, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-            if (std_file < 0) {
-                error_handle("Error while opening file for stdout!");
+            else if (i >= 1 && modified_command[i] == '>' && modified_command[i-1] == ' ') {
+                modified_command[i-1] = '\0';
+                break;
             }
-            dup2(std_file, STDOUT_FILENO);
-            close(std_file);
         }
-        if (err_redirect_sep != NULL) {
-
-            err_file = open(err_redirect_sep, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-            if (err_file < 0) {
-                error_handle("Error while opening file for stderr!");
-            }
-            dup2(err_file, STDERR_FILENO);
-            close(err_file);
-        }
-
-        // standard commands
-        if (standard_command_execute(command, sep) == 0) {
-            dup2(saved_std, STDOUT_FILENO);
-            close(saved_std);
-
-            dup2(saved_err, STDERR_FILENO);
-            close(saved_err);
-            return;
-        }
-
-        // non-standard commands
-        if (nonstandard_command_execute(command, sep) == 0) {
-            dup2(saved_std, STDOUT_FILENO);
-            close(saved_std);
-
-            dup2(saved_err, STDERR_FILENO);
-            close(saved_err);
-            return;
-        }
-
-        dup2(saved_std, STDOUT_FILENO);
-        close(saved_std);
-
-        dup2(saved_err, STDERR_FILENO);
-        close(saved_err);
-        error_handle("Error: command not found\n");
+        strcpy(command, modified_command);
     }
+
+    int command_list_count = 0;
+    int command_list_max = 1;
+    char** command_list = malloc(command_list_max * sizeof(char*));
+
+    char* command_copy = malloc(1024 * sizeof(char));
+    strcpy(command_copy, command);
+    char* conc_sep;
+    while ((conc_sep = strsep(&command_copy, "&")) != NULL) {
+
+        if (command_list_count >= command_list_max) {
+            command_list_max += 10;
+            command_list = realloc(command_list, command_list_max * sizeof(char*));
+        }
+
+        char conc_sep_arr[1024];
+        strcpy(conc_sep_arr, conc_sep);
+        if (conc_sep_arr[strlen(conc_sep_arr)-1] == ' ') {
+            conc_sep_arr[strlen(conc_sep_arr)-1] = '\0';
+        }
+        strcpy(conc_sep, conc_sep_arr);
+        if (conc_sep_arr[0] == ' ') {
+            conc_sep++;
+        }
+
+        command_list[command_list_count++] = conc_sep;
+    }
+
+    free(command_copy);
+
+
+
+    // change output if necessary
+    int std_file = -1;
+    int saved_std = dup(STDOUT_FILENO);
+
+    int err_file = -1;
+    int saved_err = dup(STDERR_FILENO);
+
+    if (std_redirect_sep != NULL) {
+        std_file = open(std_redirect_sep, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (std_file < 0) {
+            error_handle("Error while opening file for stdout!");
+        }
+        dup2(std_file, STDOUT_FILENO);
+        close(std_file);
+    }
+    if (err_redirect_sep != NULL) {
+
+        err_file = open(err_redirect_sep, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (err_file < 0) {
+            error_handle("Error while opening file for stderr!");
+        }
+        dup2(err_file, STDERR_FILENO);
+        close(err_file);
+    }
+
+    // standard commands
+    standard_command_execute(command_list, command_list_count);
+
+
+    // non-standard commands
+    nonstandard_command_execute(command_list, command_list_count);
+
+
+    dup2(saved_std, STDOUT_FILENO);
+    close(saved_std);
+
+    dup2(saved_err, STDERR_FILENO);
+    close(saved_err);
+
+    free(std_redirect_sep);
+    free(err_redirect_buffer);
 }
 
 // standard loop which acts as CLI
