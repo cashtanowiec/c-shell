@@ -21,15 +21,14 @@ void nonstandard_command_execute(char** command_list, int command_list_count) {
     int pid_array_count = 0;
     pid_t pid_array[command_list_count];
 
-
-
     for (int j = 0; j < command_list_count; j++) {
         char** arguments;
         int arguments_count = 0;
         int arguments_max_count = 0;
 
-        char* command = command_list[j];
-        char* sep = strsep(&command, " ");
+        char* command = strdup(command_list[j]);
+        char* command_ptr = command;
+        char* sep = strsep(&command_ptr, " ");
 
         if (strcmp(sep, "exit") == 0 || strcmp(sep, "cd") == 0 || strcmp(sep, "path") == 0) {
             continue;
@@ -53,8 +52,10 @@ void nonstandard_command_execute(char** command_list, int command_list_count) {
             if (arguments == NULL) {
                 error_handle("Error while allocating memory");
             }
+
+
             char* arg;
-            while ((arg = strsep(&command, " ")) != NULL) {
+            while ((arg = strsep(&command_ptr, " ")) != NULL) {
 
                 if (arguments_count >= arguments_max_count) {
                     arguments_max_count += 5;
@@ -90,6 +91,7 @@ void nonstandard_command_execute(char** command_list, int command_list_count) {
             }
         }
         free(arguments);
+        free(command);
     }
 
     for (int k = 0; k < pid_array_count; k++) {
@@ -103,14 +105,15 @@ void standard_command_execute(char** command_list, int command_list_count) {
 
     for (int i = 0; i < command_list_count; i++) {
 
-        char* command = command_list[i];
-        char* sep = strsep(&command, " ");
+        char* command = strdup(command_list[i]);
+        char* command_ptr = command;
+        char* sep = strsep(&command_ptr, " ");
 
         if (strcmp(sep, "exit") == 0) {
             exit(0);
         }
         else if (strcmp(sep, "cd") == 0) {
-            char* arg = strsep(&command, " ");
+            char* arg = strsep(&command_ptr, " ");
             if (arg == NULL) {
                 error_handle("Command cd is missing an argument\n");
             }
@@ -118,7 +121,7 @@ void standard_command_execute(char** command_list, int command_list_count) {
         }
         else if (strcmp(sep, "path") == 0) {
             char* arg;
-            while ((arg = strsep(&command, " ")) != NULL) {
+            while ((arg = strsep(&command_ptr, " ")) != NULL) {
                 if (path_count >= path_max_size) {
                     path_max_size += 5;
                     path = realloc(path, path_max_size * sizeof(char*));
@@ -131,6 +134,7 @@ void standard_command_execute(char** command_list, int command_list_count) {
                 path_count++;
             }
         }
+        free(command);
     }
 }
 
